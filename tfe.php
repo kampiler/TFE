@@ -1,9 +1,10 @@
-<?
+<?php
   error_reporting(E_ALL);
   date_default_timezone_set("Asia/Baghdad");
 
   function xlStr($s)
     {
+     if(empty($s)) return '';
      $r=$s;
      $r=str_replace('<','&lt;',$r);
      $r=str_replace('>','&gt;',$r);
@@ -21,31 +22,47 @@
   function xlStyleCC($s)
     {
      $r='';
-     if(preg_match("/^(\d{2}).(\d{2}).(\d{4})$/",$s,$m)) $r='cd';//короткая дата
-     elseif(preg_match("/^(\d{4}).(\d{2}).(\d{2})$/",$s,$m)) $r='cd';//короткая дата
-     elseif(preg_match("/^(\d{4}).(\d{2}).(\d{2}).(\d{2}).(\d{2}).(\d{2})$/",$s,$m)) $r='cg';//длинная дата
+     if(preg_match("/^(\d{2}).(\d{2}).(\d{4})$/",$s,$m))
+       {//короткая дата
+        if(checkdate($m[2],$m[1],$m[3])) $r='cd';
+       }
+     elseif(preg_match("/^(\d{4}).(\d{2}).(\d{2})$/",$s,$m))
+       {//короткая дата
+        if(checkdate($m[2],$m[3],$m[1])) $r='cd';
+       }
+     elseif(preg_match("/^(\d{4}).(\d{2}).(\d{2}).(\d{2}).(\d{2}).(\d{2})$/",$s,$m))
+       {//длинная дата
+        if(checkdate($m[2],$m[1],$m[3])) $r='cg';
+       }
      elseif(preg_match("/^(\d{2})\:(\d{2})$/",$s,$m)) $r='ct';//время
      elseif(preg_match("#^[0-9]+$#",$s,$m)) $r='cn';//целое число
-     elseif(is_money($s)) $r='cm';
-     elseif((strlen($s)>50)or(strpos($s,chr(13))>0)) $r='cw';
+     elseif(is_money($s)) $r='cm';//деньги
+     elseif((strlen($s)>50)or(strpos($s,chr(13))>0)) $r='cw';//длинная строка
      else $r='c';//просто строка
      return $r;
     }
 
+  function is_date($date, $format = 'Y-m-d H:i:s')
+    {
+     $d = DateTime::createFromFormat($format, $date);
+     return $d && $d->format($format) == $date;
+    }
+  
   function xlDateTime($s)
+  #checkdate(int $month, int $day, int $year)
     {
      $r='';
      if(preg_match("/^(\d{2}).(\d{2}).(\d{4})$/",$s,$m))
        {
-        $r="$m[3]-$m[2]-$m[1]T00:00:00.000";
+        if(checkdate($m[2],$m[1],$m[3])) $r="$m[3]-$m[2]-$m[1]T00:00:00.000";
        }
      elseif(preg_match("/^(\d{4}).(\d{2}).(\d{2})$/",$s,$m))
        {
-        $r="$m[1]-$m[2]-$m[3]T00:00:00.000";
+        if(checkdate($m[2],$m[3],$m[1])) $r="$m[1]-$m[2]-$m[3]T00:00:00.000";
        }
      elseif(preg_match("/^(\d{4}).(\d{2}).(\d{2}).(\d{2}).(\d{2}).(\d{2})$/",$s,$m))
        {
-        $r="$m[1]-$m[2]-$m[3]T$m[4]:$m[5]:$m[6].000";
+        if(checkdate($m[2],$m[3],$m[1])) $r="$m[1]-$m[2]-$m[3]T$m[4]:$m[5]:$m[6].000";
        }
      elseif(preg_match("/^(\d{2})\:(\d{2})$/",$s,$m))
        {
@@ -79,6 +96,7 @@
      public $d = array();//data   ячейки
      public $s = array();//styles стиль конкретной ячейки
      public $ix=0,$iy=0;
+     public $xRow=0;
 
      public $ixMax=0, $iyMax=0;
 
@@ -88,7 +106,10 @@
      public $title = array();
      public $total = array();
 
-     public $periodStr     = null;
+     public $RemainInp     = '';
+     public $RemainOut     = '';
+     public $PeriodStr     = '';
+
      public $useTimeStamp  = False;
      public $useTitleNum   = True;
      public $useAutoFilter = False;
@@ -177,6 +198,7 @@
 
      function AddCell(...$data)
        {
+        if(func_num_args()==0) $this->sheets[$this->ia]->AddCell('');
         foreach($data as $d)
           $this->sheets[$this->ia]->AddCell($d);
        }
@@ -191,6 +213,11 @@
         $this->sheets[$this->ia]->useTimeStamp=True;
        }
 
+     function AddPeriodStr($s)
+       {
+        $this->sheets[$this->ia]->PeriodStr=$s;
+       }
+
      function AddWidth($w)
        {
         $this->sheets[$this->ia]->width[]=$w;
@@ -200,6 +227,16 @@
        {
         $this->sheets[$this->ia]->head[]  = $head;
         $this->sheets[$this->ia]->merge[] = $merge-1;
+       }
+
+     function AddRemainInp($s)
+       {
+        $this->sheets[$this->ia]->RemainInp=$s;
+       }
+
+     function AddRemainOut($s)
+       {
+        $this->sheets[$this->ia]->RemainOut=$s;
        }
 
      function AddTitle(...$titles)
@@ -218,6 +255,7 @@
        {
         $this->sheets[$this->ia]->useAutoFilter=True;
        }
+
 
      function MakeFile()
        {
@@ -242,7 +280,7 @@
         $r.=" </ExcelWorkbook>\n\n";
         $r.=" <Styles>\n";
         $r.="  <Style ss:ID='Default' ss:Name='Normal'>\n";
-        $r.="   <Alignment ss:Vertical='Bottom'/>\n";
+        $r.="   <Alignment ss:Vertical='Center' ss:WrapText='1'/>\n";
         $r.="   <Borders/>\n";
         $r.="   <Font ss:FontName='Arial Cyr' x:CharSet='204'/>\n";
         $r.="   <Interior/>\n";
@@ -302,13 +340,14 @@
         $r.="   <Alignment ss:Horizontal='Center' ss:Vertical='Center' ss:WrapText='1'/>\n";
         $r.="  </Style>\n";
 
-        $r.="  <Style ss:ID='c'>\n";#для всего остального
+        $r.="  <Style ss:ID='c'>\n";#для всего остального - общий
         $r.="   <Borders>\n";
         $r.="    <Border ss:Position='Bottom' ss:LineStyle='Continuous' ss:Weight='1'/>\n";
         $r.="    <Border ss:Position='Left' ss:LineStyle='Continuous' ss:Weight='1'/>\n";
         $r.="    <Border ss:Position='Right' ss:LineStyle='Continuous' ss:Weight='1'/>\n";
         $r.="    <Border ss:Position='Top' ss:LineStyle='Continuous' ss:Weight='1'/>\n";
         $r.="   </Borders>\n";
+        $r.="   <Alignment ss:Vertical='Center' ss:WrapText='1'/>\n";
         $r.="  </Style>\n";
 
         $r.="  <Style ss:ID='cw'>\n";#для длинных строк
@@ -318,7 +357,7 @@
         $r.="    <Border ss:Position='Right' ss:LineStyle='Continuous' ss:Weight='1'/>\n";
         $r.="    <Border ss:Position='Top' ss:LineStyle='Continuous' ss:Weight='1'/>\n";
         $r.="   </Borders>\n";
-        $r.="   <Alignment ss:WrapText='1'/>\n";
+        $r.="   <Alignment ss:Vertical='Center' ss:WrapText='1'/>\n";
         $r.="  </Style>\n";
 
         $r.="  <Style ss:ID='cd'>\n";#для коротких дат
@@ -329,6 +368,7 @@
         $r.="    <Border ss:Position='Top' ss:LineStyle='Continuous' ss:Weight='1'/>\n";
         $r.="   </Borders>\n";
         $r.="   <NumberFormat ss:Format='Short Date'/>\n";
+        $r.="   <Alignment ss:Vertical='Center' ss:WrapText='1'/>\n";
         $r.="  </Style>\n";
 
         $r.="  <Style ss:ID='cg'>\n";#полная дата
@@ -339,6 +379,7 @@
         $r.="    <Border ss:Position='Top' ss:LineStyle='Continuous' ss:Weight='1'/>\n";
         $r.="   </Borders>\n";
         $r.="   <NumberFormat ss:Format='General Date'/>\n";
+        $r.="   <Alignment ss:Vertical='Center' ss:WrapText='1'/>\n";
         $r.="  </Style>\n";
 
         $r.="  <Style ss:ID='ct'>\n";#время
@@ -359,6 +400,7 @@
         $r.="    <Border ss:Position='Top' ss:LineStyle='Continuous' ss:Weight='1'/>\n";
         $r.="   </Borders>\n";
         $r.="   <NumberFormat ss:Format='#,##0.00_ ;\\-#,##0.00\\ '/>\n";
+        $r.="   <Alignment ss:Vertical='Center' ss:WrapText='1'/>\n";
         $r.="  </Style>\n";
 
         $r.="  <Style ss:ID='cn'>\n";#целое
@@ -369,9 +411,20 @@
         $r.="    <Border ss:Position='Top' ss:LineStyle='Continuous' ss:Weight='1'/>\n";
         $r.="   </Borders>\n";
         $r.="   <NumberFormat ss:Format='0'/>\n";//
+        $r.="   <Alignment ss:Vertical='Center' ss:WrapText='1'/>\n";
         $r.="  </Style>\n";
-        $r.="</Styles>\n\n";
+
+        $r.="
+             <Style ss:ID='PeriodStr'>
+               <Font ss:FontName='Verdana' x:CharSet='204' x:Family='Swiss' ss:Size='12' ss:Bold='1'/>
+             </Style>\n";
+
+        $r.="
+             <Style ss:ID='TimeStamp'>
+               <Font ss:FontName='Verdana' x:CharSet='204' x:Family='Swiss' ss:Size='7'/>
+             </Style>\n";
         // вывели все стили
+        $r.="</Styles>\n\n";
                 
         foreach($this->sheets as $i=>$sh)
           {
@@ -388,14 +441,35 @@
            // метка времени формирования отчета
            if($sh->useTimeStamp)
              {
+              $sh->xRow++;
               $r.="   <Row>\n";
-              $r.="    <Cell ss:MergeAcross='$sh->iyMax'><Data ss:Type='String'>Отчет сформирован: ".date('d.m.Y - H:i:s')."</Data></Cell>\n";
+              $r.="    <Cell ss:StyleID='TimeStamp' ss:MergeAcross='$sh->iyMax'><Data ss:Type='String'>Отчет сформирован: ".date('d.m.Y - H:i:s')."</Data></Cell>\n";
               $r.="   </Row>\n";
              }
 
+           // период
+           if($sh->PeriodStr!='')
+             {
+              $sh->xRow++;
+              $r.="   <Row>\n";
+              $r.="    <Cell ss:StyleID='PeriodStr' ss:MergeAcross='$sh->iyMax'><Data ss:Type='String'>".$sh->PeriodStr."</Data></Cell>\n";
+              $r.="   </Row>\n";
+             }
+              
+
+           // входящий остаток +++
+           if($sh->RemainInp!='')
+             {
+              $sh->xRow++;
+              $r.="   <Row>\n";
+              $r.="    <Cell ss:MergeAcross='$sh->iyMax'><Data ss:Type='String'>".$sh->RemainInp."</Data></Cell>\n";
+              $r.="   </Row>\n";
+             }
+              
            //заголовки
            if(count($sh->head)!==0)
              {
+              $sh->xRow++;
               $r.="   <Row>\n";
               foreach($sh->head as $h=>$head)
                 {
@@ -403,38 +477,53 @@
                  $r.="    <Cell ss:StyleID='head' ss:MergeAcross='$m'><Data ss:Type='String'>$head</Data></Cell>\n";
                 }
               $r.="   </Row>\n";
+              $sh->ixAutoFilter = $sh->xRow;
+              $sh->iyAutoFilter = count($sh->head);
              }
            
-           //заголовки1
+           //подзаголовки
            if(count($sh->title)!==0)
              {
+              $sh->xRow++;
               $r.="   <Row>\n";
               foreach($sh->title as $t=>$title)
                  $r.="    <Cell ss:StyleID='title'><Data ss:Type='String'>$title</Data></Cell>\n";
               $r.="   </Row>\n";
-              //номера заголовков1
+              //номера подзаголовков
               if($sh->useTitleNum)
                 {
+                 $sh->xRow++;
                  $r.="   <Row>\n";
                  foreach($sh->title as $t=>$title)
                     $r.="    <Cell ss:StyleID='titleInt'><Data ss:Type='Number'>".($t+1)."</Data></Cell>\n";
                  $r.="   </Row>\n";
-                 $sh->ixAutoFilter = $sh->ix+1;
-                 $sh->iyAutoFilter = count($sh->title);
                 }
+              $sh->ixAutoFilter = $sh->xRow;
+              $sh->iyAutoFilter = count($sh->title);
              }
            
+           # тут выводим содержимое
            $r.=$sh;//toString
 
            //итоги
            if(count($sh->total)!==0)
              {
+              $sh->xRow++;
               $r.="   <Row>\n";
               foreach($sh->total as $t=>$total)
                 $r.="    <Cell ss:StyleID='total'><Data ss:Type='".xlTypes($total)."'>$total</Data></Cell>\n";
               $r.="   </Row>\n";
              }
-           
+
+           // исходящий остаток +++
+           if($sh->RemainOut!='')
+             {
+              $sh->xRow++;
+              $r.="   <Row>\n";
+              $r.="    <Cell ss:MergeAcross='$sh->iyMax'><Data ss:Type='String'>".$sh->RemainOut."</Data></Cell>\n";
+              $r.="   </Row>\n";
+             }
+              
            $r.="  </Table>\n";
 
            /*
@@ -459,7 +548,9 @@
            */
 
            if($sh->useAutoFilter)#'R4C1:R4C6'
-             $r.="  <AutoFilter x:Range='R".$sh->ixAutoFilter."C1:R".$sh->ixAutoFilter."C".$sh->iyAutoFilter."' xmlns='urn:schemas-microsoft-com:office:excel'></AutoFilter>\n";
+             if($sh->ixAutoFilter>0)
+               $r.="  <AutoFilter x:Range='R".$sh->ixAutoFilter."C1:R".$sh->ixAutoFilter."C".$sh->iyAutoFilter."' xmlns='urn:schemas-microsoft-com:office:excel'></AutoFilter>\n";
+
            $r.=" </Worksheet>\n\n";
           }
 
@@ -490,6 +581,10 @@
            header ( "Content-Disposition: attachment; filename=$fn" );
            header ( "Content-Transfer-Encoding: binary");
            header ( 'Content-length: '.$size);
+          }
+        elseif($p===3)
+          {
+           if(file_put_contents($fn,$r)>0) $r=$fn;
           }
         return $r;
         //OpenFile();
